@@ -1,0 +1,6 @@
+SecurityEvent // Comment: Audit 2 failed login attempts
+| where Computer in ("CI-IS-VW-P001", "CI-IS-VW-P002", "CI-IS-VW-T001", "CI-SQL-VW-T002") // exact matches
+| where EventID == 4625 // Failed login attempts
+| summarize FailedLoginAttempts = count() by TargetUserName, Computer // Count failed attempts
+| where FailedLoginAttempts >= 3 // Filter 3 failed attempts
+| order by FailedLoginAttempts desc // Order by the count of failed attempts

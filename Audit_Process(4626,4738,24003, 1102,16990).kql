@@ -1,0 +1,14 @@
+let DetailedEvents = SecurityEvent
+| where EventID in (4626, //New account logon
+					4738, //User account changed in AD
+					24003,//SQL server Login Failed
+					1102, //Audit Log cleared
+					16990)//security account manager blocks a non-administrator from creating an Active Directory account
+| project TimeGenerated, Computer, SubjectUserName, EventID, SubjectDomainName, SubjectUserSid, ProcessName, ObjectName, PrivilegeList;
+let UserEventCounts = DetailedEvents
+| summarize EventCount = count() by SubjectUserName;
+DetailedEvents
+| join kind=inner UserEventCounts on SubjectUserName
+| project SubjectUserName, Computer, SubjectDomainName, EventID, SubjectUserSid, ProcessName, ObjectName, PrivilegeList, EventCount
+| order by SubjectUserName desc
+

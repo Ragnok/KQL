@@ -1,0 +1,13 @@
+SecurityEvent
+| where Computer in ("CI-IS-VW-P001", "CI-IS-VW-P002", "CI-IS-VW-T001", "CI-SQL-VW-T002")
+| where EventID in (4625, 5148) // Include both failed login attempts and EventID 5148
+| project Computer, TargetUserName, TimeGenerated, IPAddress = tostring(IpAddress), WorkstationName, LogonType, EventDetails = case(EventID == 4625, tostring(AdditionalInfo), EventID == 5148, "The Windows Filtering Platform has permitted a connection.", "Unknown Event")
+// Summary of failed attempts to filter users with 3 or more failed attempts
+| join kind=inner (
+    SecurityEvent
+    | where Computer in ("CI-IS-VW-P001", "CI-IS-VW-P002", "CI-IS-VW-T001", "CI-SQL-VW-T002")
+    | where EventID in (4625, 5148)
+    | summarize FailedLoginAttempts = count() by TargetUserName, Computer
+    | where FailedLoginAttempts >= 1
+) on TargetUserName, Computer
+| order by TimeGenerated desc

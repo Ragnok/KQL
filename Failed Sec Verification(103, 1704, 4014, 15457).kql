@@ -1,0 +1,12 @@
+SecurityEvent // Comment: Failed Sec Verification
+| where Computer in ("CI-IS-VW-P001", "CI-IS-VW-P002", "CI-IS-VW-T001", "CI-SQL-VW-T002") // exact matches
+| where EventID in (103, 1704, 4014, 15457)
+| extend EventDetails = case(
+    EventID == 103, "Error related to service starting",
+    EventID == 1704, "Security settings successfully applied",
+    EventID == 4014, "Network errors on SQL server",
+    EventID == 15457, "SQL Server configuration logging",
+    "Unknown Event"
+)
+| summarize Count=count() by EventID, EventDetails, EndpointIdentifier=Computer, TimeBin=bin(TimeGenerated, 1h)
+| order by TimeBin desc 

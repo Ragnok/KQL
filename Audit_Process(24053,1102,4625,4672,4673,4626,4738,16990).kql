@@ -1,0 +1,15 @@
+SecurityEvent
+| where Computer has "CI-IS-VW-P001" 
+    or Computer has "CI-SQL-VM-T002" 
+    or Computer has "CI-IS-VW-T001" 
+    or Computer has "CI-IS-VW-P002"
+| where EventID == 24053 // Audit Failure
+    or EventID == 1102 // Audit log was cleared.
+    or EventID == 4625 // Failed Logon
+    or EventID == 4672 // Special Privileges
+    or EventID == 4673 // Sensitive Privilege Use
+    or EventID == 4626 // New Account logon
+    or EventID == 4738 // When User account is changed in AD
+    or EventID == 16990 // Security account manager blocks a non-administrator from creating an Active Directory account
+| project SubjectUserName, Computer, SubjectDomainName, EventID, SubjectUserSid, ProcessName, ObjectName, PrivilegeList
+| order by Computer desc

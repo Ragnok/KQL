@@ -1,0 +1,9 @@
+SecurityEvent
+| where Computer has "CI-IS-VW-P001" or Computer has "CI-SQL-vw-T002" or Computer has "CI-IS-VW-T001" or Computer has "CI-IS-VW-P002"
+| where EventID in (4624, 4625) 
+| extend ReceivedTimeStamp = tostring(TimeGenerated)
+| parse ReceivedTimeStamp with * 'T' Parsed_UTC_Hour ":" *
+| where Parsed_UTC_Hour in ('00','01','02','03','04','05','06','07','08','09') // focusing on specific hours if needed
+| where not(TargetUserName == "SYSTEM" or TargetUserName == "OPS-DB-CHECK" or TargetUserName == "SVC-Forescout" or TargetUserName startswith "MSSQLFDLauncher" or TargetUserName startswith "CI-") 
+| project Computer, ReceivedTimeStamp, Parsed_UTC_Hour, EventID, TargetUserName
+| sort by ReceivedTimeStamp desc

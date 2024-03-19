@@ -1,0 +1,5 @@
+Heartbeat
+| where TimeGenerated >= datetime(2023-12-01) and TimeGenerated < datetime(2023-12-02)
+| summarize LiveSystemCount = dcount(Computer)
+
+

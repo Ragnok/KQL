@@ -1,0 +1,9 @@
+let existingoperations=
+    AuditLogs
+    | where TimeGenerated > ago(180d) and TimeGenerated < ago(7d)
+    | distinct OperationName;
+AuditLogs
+| where TimeGenerated > ago(7d)
+| summarize Count=count() by OperationName, Category
+| where OperationName !in (existingoperations)
+| sort by Count desc 

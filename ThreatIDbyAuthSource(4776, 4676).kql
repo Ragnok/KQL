@@ -1,0 +1,25 @@
+SecurityEvent
+| where Computer has "CI-IS-VW-P001" 
+    or Computer has "CI-SQL-VW-T002" 
+    or Computer has "CI-IS-VW-T001" 
+    or Computer has "CI-IS-VW-P002"
+| where EventID in (4776, 4674)
+| where not(tolower(Account) endswith "check") and not(tolower(Account) startswith "nt authority")
+| extend EventDetails = case(
+    EventID == 4776, "NTLM Authentication attempt",
+    EventID == 4674, "Operation attempted on a privileged object",
+    "Unknown Event"
+)
+| extend TargetUser = case(
+    EventID == 4776, strcat(TargetUserName, " (", coalesce(TargetDomainName, ""), ")"),
+    EventID == 4674, strcat(SubjectUserName, " (", coalesce(SubjectDomainName, ""), ")"),
+    "Unknown"
+)
+| extend HostName = Computer
+| extend UserSid = case(
+    EventID == 4776, TargetSid,
+    EventID == 4674, SubjectUserSid,
+    "Unknown"
+)
+| summarize Count = count() by bin(TimeGenerated, 1h), Account, EventID, EventDetails, EndpointIdentifier = Computer, TargetUser, UserSid, HostName
+| order by TimeGenerated desc

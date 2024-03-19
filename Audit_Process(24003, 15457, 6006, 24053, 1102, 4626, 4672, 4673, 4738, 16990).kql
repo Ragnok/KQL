@@ -1,0 +1,18 @@
+SecurityEvent// Comment: Audit Process Failure + Audit Failure Events - 4625 Failed Logon
+| where Computer in ("CI-IS-VW-P001", "CI-IS-VW-P002", "CI-IS-VW-T001", "CI-SQL-VW-T002")
+| where EventID in (24003, 15457, 6006, 24053, 1102, 4626, 4672, 4673, 4738, 16990)
+| extend EventDetails = case(
+    EventID == 24003, "SQL Server login failure", 
+    EventID == 15457, "SQL Server configuration changes", 
+    EventID == 6006, "Event log service stopped",
+    EventID == 24053, "An audit session was modified", 
+    EventID == 1102, "Audit log cleared",
+    EventID == 4626, "Anomalous user logon detected", 
+    EventID == 4672, "Special privileges assigned to new logon",
+    EventID == 4673, "A privileged service was called",
+    EventID == 4738, "A user account was changed",
+    EventID == 16990, "SQL Server resource pool configuration change", 
+    "Unknown Event"
+)
+| summarize Count=count() by EventDetails, EventID, EndpointIdentifier=Computer, bin(TimeGenerated, 1h) // Minor formatting changes for readability
+| order by Count desc

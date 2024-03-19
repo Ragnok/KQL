@@ -1,0 +1,15 @@
+SecurityEvent
+| where Computer has "CI-IS-VW-P001" or Computer has "CI-SQL-vw-T002" or Computer has "CI-IS-VW-T001" or Computer has "CI-IS-VW-P002"
+| where EventID in (701, 824, 833, 2004, 6006, 1704)
+| extend EventDetails = case(
+    EventID == 701, "SQL Server memory reclaimed",
+    EventID == 824, "SQL Server detected an I/O error",
+    EventID == 833, "SQL Server I/O delay",
+    EventID == 2004, "Windows resource exhaustion detected",
+    EventID == 6006, "Event log service stopped",
+    EventID == 1704, "Security settings applied",//This is good and we expect to see
+    "Unknown Event"
+)
+| project TimeGenerated, EndpointIdentifier=Computer, EventID, EventDetails, AdditionalInfo=Message
+| summarize Count=count() by EventID, EventDetails, EndpointIdentifier, bin(TimeGenerated, 1h)
+| order by TimeGenerated desc
