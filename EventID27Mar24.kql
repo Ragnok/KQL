@@ -1,0 +1,66 @@
+SecurityEvent
+| where Computer in ("CI-IS-VW-P001", "CI-IS-VW-P002", "CI-IS-VW-T001", "CI-SQL-VW-T002") // exact matches
+| where EventID in (4625, 5148, 4722, 4726, 4725, 4738, 4720, 701, 824, 833, 2004, 6006, 1704, 24003, 15457, 6006, 4776, 4676, 5148, 4674, 24003, 15457, 1102, 4672, 4673)
+| where not(ProcessName endswith "lsass.exe" 
+    or ProcessName endswith "powershell.exe" 
+    or ProcessName endswith "svchost.exe" 
+    or ProcessName endswith "chrome.exe" 
+    or ProcessName endswith "TaskHost.exe" 
+    or ProcessName endswith "explorer.exe" 
+    or ProcessName endswith "Teams.exe" 
+    or ProcessName endswith "msedge.exe" 
+    or ProcessName endswith "msedgewebview2.exe" 
+    or SubjectUserName == "SYSTEM")
+// Exclude specific accounts based on your requirements
+| where not(TargetUserName == "SYSTEM") and
+	not (TargetUserName == "SYSTEM") and
+	not (TargetUserName endswith "SERVICE") and
+	not (TargetUserName == "SVC-Forescout") and
+	not (TargetUserName == "OPS-SCANNER") and
+	not (TargetUserName startswith "ops") and
+	not (TargetUserName == "ciscoacvpnuser") and
+	not(TargetUserName endswith "SCANNER") and 
+	not(TargetUserName == "ciscoacvpnuser") and 
+	not(TargetUserName endswith "CHECK") and 
+	not(TargetUserName startswith "nt authority")
+| extend EventType = case(
+    EventID in (4625, 5148), "Failed Login or DoS Attempt",
+    EventID in (4722, 4726, 4725, 4738, 4720), "Account Enabled, Removed, Disabled, Modified, or Created",
+    EventID in (701, 824, 833, 2004, 6006, 1704), "Low Resources",
+    EventID in (24003, 15457, 6006), "Audit Process Failure",
+    EventID in (4776, 4625, 4676, 5148, 4674), "Threat Identified",
+    EventID in (24003, 15457, 1102, 4672, 4673), "Audit Failure",
+    EventID == 4662, "AD Object Access",
+    EventID == 513, "DNS Service Start",
+    EventID == 514, "DNS Service Stop",
+    EventID == 515, "DNS Service Pause",
+    EventID == 516, "DNS Changes",
+    "Other"
+)
+| extend LogonTypeDescription = case(
+    LogonType == 2, "Interactive",
+    LogonType == 3, "Network",
+    LogonType == 4, "Batch",
+    LogonType == 5, "Service",
+    LogonType == 7, "Unlock",
+    LogonType == 8, "NetworkCleartext",
+    LogonType == 9, "NewCredentials",
+    LogonType == 10, "RemoteInteractive",
+    LogonType == 11, "CachedInteractive",
+    "Unknown"
+)
+| extend OffHoursOrWeekendLogin = case(
+    dayofweek(TimeGenerated) == 0 or dayofweek(TimeGenerated) == 6, true, // Checks if it's a weekend
+    hourofday(TimeGenerated + 5h) >= 23 or hourofday(TimeGenerated + 5h) < 6, true, // Checks if it's between 6 PM EST and 6 AM EST
+    false
+)
+| where OffHoursOrWeekendLogin == true // Only select events that occurred during off-hours or weekends
+| join kind=inner (
+    SecurityEvent
+    | where EventID == 4625
+    | summarize FailedLoginAttempts = count() by TargetUserName, Computer
+    | where FailedLoginAttempts >= 3
+) on $left.TargetUserName == $right.TargetUserName, $left.Computer == $right.Computer
+| project-away TargetUserName1, Computer1 // Remove duplicated columns from the join
+| project TimeGenerated, Computer, EventType, EventID, SubjectUserName, TargetUserName, ProcessName, ObjectName, IpAddress, WorkstationName, LogonType, LogonTypeDescription, FailedLoginAttempts, Details, AdditionalInfo, MachineInventory, PrivilegeList, OffHoursOrWeekendLogin
+| order by FailedLoginAttempts desc, TimeGenerated desc

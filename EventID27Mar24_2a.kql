@@ -1,0 +1,57 @@
+SecurityEvent
+| where Computer has "CI-IS-VW-P001" 
+    or Computer has "CI-SQL-VM-T002" 
+    or Computer has "CI-IS-VW-T001" 
+    or Computer has "CI-SQL-VW-P002"
+| where EventID in (513, 514, 515, 516, 701, 824, 833, 1102, 1704, 2004, 24003, 4624, 4625, 4659, 4660, 4662, 4663, 4670, 4672, 4688, 4720, 4722, 4725, 4726, 4733, 4734, 4738, 4776, 5148, 6006, 15457, 4672, 4673, 4674, 4676, 7045)
+| where not(
+    ProcessName endswith "lsass.exe" or
+    ProcessName endswith "svchost.exe" or
+    ProcessName endswith "chrome.exe" or
+    ProcessName endswith "TaskHost.exe" or
+    ProcessName endswith "explorer.exe" or
+    ProcessName endswith "Teams.exe" or
+    ProcessName endswith "msedge.exe" or
+    ProcessName endswith "msedgewebview2.exe" or
+    SubjectUserName == "SYSTEM" or
+    TargetUserName == "SYSTEM" or
+    TargetUserName == "SVC-Forescout" or
+    TargetUserName == "OPS-SCANNER" or
+    TargetUserName == "ciscoacvpnuser" or
+    SubjectUserName startswith ("OPS") or
+    TargetUserName endswith "SERVICE" or
+    TargetUserName endswith "SCANNER" or
+    TargetUserName endswith "CHECK" or
+    TargetUserName startswith "nt authority"
+)
+| extend EventType = case(
+    EventID in (4624, 4625, 5148), "Successful or Failed Login or DoS Attempt",
+    EventID in (4720, 4722, 4725, 4726, 4738), "Account Management Creation, Disable, termination, modification",
+    EventID in (701, 824, 833, 2004, 6006, 1704), "Resource Depletion",
+    EventID in (24003, 15457, 6006), "Audit Failure",
+    EventID in (4776, 4676, 4674), "Potential Threat Activity",
+    EventID in (1102, 4672, 4673), "Audit-Related Activity",
+    EventID in (513, 514, 515, 516), "DNS Service Activity",
+    EventID in (4659, 4660), "Success and Failure of attempts to delete files and other objects, prevent privilege abuse",
+    EventID in (4733, 4734), "Successful and unsuccessful attempts to delete privileges",
+    EventID in (7036, 7045), "A new service is installed, stopped, or restarted on the system",
+    EventID == 4662, "Active Directory Object Access",
+    EventID == 4663, "Attempt to access file systems, kernel objects, registry objects, or even objects on removable storage devices",
+    EventID == 4688, "A new process is created",
+    EventID == 4670, "Permissions on an object are changed Write DAC/Change Permissions or Take Ownership",
+    EventID == 4672, "Administrative Login",
+    "Other Activity"
+)
+| extend LogonTypeDescription = case(
+    LogonType == 2, "Interactive",
+    LogonType == 3, "Network",
+    LogonType == 4, "Batch",
+    LogonType == 5, "Service",
+    LogonType == 7, "Unlock",
+    LogonType == 8, "NetworkCleartext",
+    LogonType == 9, "NewCredentials",
+    LogonType == 10, "RemoteInteractive",
+    LogonType == 11, "CachedInteractive",
+    "Unknown"
+)
+| project TimeGenerated, Computer, EventType, EventID, ResponsibleUser = SubjectUserName, SubjectAccount, TargetUserName, TargetAccount, ProcessName, ObjectName, IpAddress, WorkstationName, LogonType, LogonTypeDescription, EventData, AdditionalInfo, MachineInventory, PrivilegeList, CommandLine, ParentProcessName, Process, _ResourceId

@@ -1,0 +1,57 @@
+let MultipleLogons = SecurityEvent
+| where EventID == 4624
+| summarize Computers = makeset(Computer), CountComputers = dcount(Computer) by TargetUserName
+| where CountComputers > 1;
+SecurityEvent
+| where Computer in ("CI-IS-VW-P001", "CI-IS-VW-P002", "CI-IS-VW-T001", "CI-SQL-VW-T002") // Exact matches only
+| where EventID in (513, 514, 515, 516, 701, 824, 833, 1102, 1704, 2004, 24003, 4624, 4625, 4659, 4660, 4662, 4663, 4670, 4672, 4688, 4720, 4722, 4725, 4726, 4733, 4734, 4738, 4776, 5148, 6006, 15457, 4672, 4673, 4674, 4676, 7045) // Event IDs in ascending order
+| where not(
+    ProcessName has_any("lsass.exe", "svchost.exe", "chrome.exe", "TaskHost.exe", "explorer.exe", "Teams.exe", "msedge.exe", "msedgewebview2.exe") or 
+    SubjectUserName == "SYSTEM"
+) // Exclude processes and system user
+| where not(
+    TargetUserName has_any("SYSTEM", "SVC-Forescout", "OPS-SCANNER", "ciscoacvpnuser") or 
+    TargetUserName endswith_any("SERVICE", "SCANNER", "CHECK") or 
+    TargetUserName startswith_any("ops", "nt authority")
+) // Exclude specific user accounts based on requirements
+| extend EventType = case(
+    EventID in (4624, 4625, 5148), "Successful or Failed Login or DoS Attempt",
+    EventID in (4720, 4722, 4725, 4726, 4738), "Account Management Creation, Disable, termination, modification",
+    EventID in (701, 824, 833, 2004, 6006, 1704), "Resource Depletion",
+    EventID in (24003, 15457, 6006), "Audit Failure",
+    EventID in (4776, 4676, 4674), "Potential Threat Activity",
+    EventID in (1102, 4672, 4673), "Audit-Related Activity",
+    EventID in (513, 514, 515, 516), "DNS Service Activity",
+    EventID in (4659, 4660), "Success and Failure of attempts to delete files and other objects, prevent privilege abuse",
+    EventID in (4733, 4734), "Successful and unsuccessful attempts to delete privileges",
+    EventID in (7036, 7045), "A new service is installed, stopped, or restarted on the system",
+    EventID == 4662, "Active Directory Object Access",
+    EventID == 4663, "Attempt to access file systems, kernel objects, registry objects, or even objects on removable storage devices",
+    EventID == 4688, "A new process is created",
+    EventID == 4670, "Permissions on an object are changed Write DAC/Change Permissions or Take Ownership",
+    EventID == 4672, "Administrative Login",
+"Other Activity"
+)
+| extend LogonTypeDescription = case(
+LogonType == 2, "Interactive",
+LogonType == 3, "Network",
+LogonType == 4, "Batch",
+LogonType == 5, "Service",
+LogonType == 7, "Unlock",
+LogonType == 8, "NetworkCleartext",
+LogonType == 9, "NewCredentials",
+LogonType == 10, "RemoteInteractive",
+LogonType == 11, "CachedInteractive",
+"Unknown Logon Type"
+)
+| extend OffHoursOrWeekendLogin = dayofweek(TimeGenerated) in (0, 6) or hourofday(TimeGenerated + 5h) !in (6..22) // Simplified off-hours or weekend login check
+| where OffHoursOrWeekendLogin == true // Focus on off-hours or weekend events
+| join kind=inner (
+SecurityEvent
+| where EventID == 4625
+| summarize FailedLoginAttempts = count() by TargetUserName, Computer
+| where FailedLoginAttempts >= 3
+) on TargetUserName, Computer
+| join kind=inner MultipleLogons on TargetUserName // Join with subquery to get users with multiple logons
+| project TimeGenerated, Computer, EventType, EventID, SubjectUserName, TargetUserName, ProcessName, ObjectName, IpAddress, WorkstationName, LogonType, LogonTypeDescription, FailedLoginAttempts, Computers, CountComputers, Details, AdditionalInfo, MachineInventory, PrivilegeList, OffHoursOrWeekendLogin
+| order by FailedLoginAttempts desc, TimeGenerated desc // Sort by login attempts and then time

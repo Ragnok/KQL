@@ -1,0 +1,7 @@
+SecurityEvent
+| where EventID == 4624 
+| where TimeGenerated >= ago(24h) // Limiting to the last 24 hours for performance; adjust as needed
+| summarize Computers = makeset(Computer), CountComputers = dcount(Computer) by TargetUserName, bin(TimeGenerated, 5m) // Group by user and time window; adjust bin size as needed
+| where CountComputers > 1 // Focus on instances where a user logged into more than 1 computer within the time window
+| project TargetUserName, TimeGenerated, Computers, CountComputers
+| order by CountComputers desc, TimeGenerated desc

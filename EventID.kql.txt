@@ -1,0 +1,194 @@
+//SQL After Hours Login and Login Fails
+SecurityEvent
+| where Computer has "CI-IS-VW-P001" 
+   or Computer has "CI-SQL-VM-T002" 
+   or Computer has "CI-IS-VW-T001" 
+   or Computer has "CI-SQL-VW-P002"
+| where EventID in (4626, 4783,24003,1102,16990)
+| where EventID in (4626, //New account logon
+4738, //User account changed in AD
+24003,//SQL server Login Failed
+1102, //Audit Log cleared
+16990)//security account manager blocks a non-administrator from creating an Active Directory account
+| extend ReceivedTimeStamp = tostring(TimeGenerated)
+| parse ReceivedTimeStamp with * 'T' Parsed_UTC_Hour ":" *
+| where Parsed_UTC_Hour in ('00','01','02','03','04','05','06','07','08','09') // focusing on specific hours if needed
+| where not(TargetUserName == "SYSTEM" or TargetUserName == "OPS-DB-CHECK" or TargetUserName == "SVC-Forescout" or TargetUserName startswith "MSSQLFDLauncher" or TargetUserName startswith "CI-")
+| project Computer, ReceivedTimeStamp, Parsed_UTC_Hour, EventID, TargetUserName
+| sort by ReceivedTimeStamp desc
+
+//Low Resources
+SecurityEvent
+| where Computer has "CI-IS-VW-P001" 
+   or Computer has "CI-SQL-VM-T002" 
+   or Computer has "CI-IS-VW-T001" 
+   or Computer has "CI-SQL-VW-P002"
+| where EventID in (701, 824, 833, 2004, 6006, 1704)
+| extend EventDetails = case(
+   EventID == 701, "SQL Server memory reclaimed",
+   EventID == 824, "SQL Server detected an I/O error",
+   EventID == 833, "SQL Server I/O delay",
+   EventID == 2004, "Windows resource exhaustion detected",
+   EventID == 6006, "Event log service stopped",
+   EventID == 1704, "Security settings applied",
+   "Unknown Event"
+)
+| project TimeGenerated, EndpointIdentifier=Computer, EventID, EventDetails, AdditionalInfo=MachineInventory
+| summarize Count=count() by EventID, EventDetails, EndpointIdentifier, bin(TimeGenerated, 1h)
+| order by TimeGenerated desc
+ 
+ 
+//Account Enabling, Removal, Disable, Modified, Create
+SecurityEvent
+| where Computer has "CI-IS-VW-P001" 
+   or Computer has "CI-SQL-VM-T002" 
+   or Computer has "CI-IS-VW-T001" 
+   or Computer has "CI-SQL-VW-P002"
+| where EventID in(4722, 4726,4725,4738,4720)
+| where EventID in (4722, //account was enabled
+	4726, //Account was Removed
+	4725, //Account was disabled
+        4738, //Account was modified
+	4720)//Account was created
+|summarize count() by Account, Activity, Computer, EventSourceName, TargetUserName, TargetAccount, SubjectUserSid
+
+
+//Fail logins and DoS
+SecurityEvent
+| where Computer has "CI-IS-VW-P001" 
+   or Computer has "CI-SQL-VM-T002" 
+   or Computer has "CI-IS-VW-T001" 
+   or Computer has "CI-SQL-VW-P002"
+| where EventID in (4625, 5148) // Include both failed login attempts and EventID 5148
+| project Computer, TargetUserName, TimeGenerated, IPAddress = tostring(IpAddress), WorkstationName, LogonType, EventDetails = case(EventID == 4625, tostring(AdditionalInfo), EventID == 5148, "The Windows Filtering Platform has permitted a connection.", "Unknown Event")
+// Summary of failed attempts to filter users with 3 or more failed attempts
+| join kind=inner (
+   SecurityEvent
+   | where Computer in ("CI-IS-VW-P001", "CI-IS-VW-P002", "CI-IS-VW-T001", "CI-SQL-VW-T002")
+   | where EventID in (4625, 5148)
+   | summarize FailedLoginAttempts = count() by TargetUserName, Computer
+   | where FailedLoginAttempts >= 3
+) on TargetUserName, Computer
+| order by TimeGenerated desc
+ 
+ 
+//Audit Failure Events Part A
+let DetailedEvents = SecurityEvent
+| where Computer has "CI-IS-VW-P001" 
+   or Computer has "CI-SQL-VM-T002" 
+   or Computer has "CI-IS-VW-T001" 
+   or Computer has "CI-SQL-VW-P002"
+| where EventID in (4626, //New account logon
+4738, //User account changed in AD
+24003,//SQL server Login Failed
+1102, //Audit Log cleared
+16990)//security account manager blocks a non-administrator from creating an Active Directory account
+| project TimeGenerated, Computer, SubjectUserName, EventID, SubjectDomainName, SubjectUserSid, ProcessName, ObjectName, PrivilegeList;
+let UserEventCounts = DetailedEvents
+| summarize EventCount = count() by SubjectUserName;
+DetailedEvents
+| join kind=inner UserEventCounts on SubjectUserName
+| project SubjectUserName, Computer, SubjectDomainName, EventID, SubjectUserSid, ProcessName, ObjectName, PrivilegeList, EventCount
+| order by SubjectUserName desc
+ 
+ 
+//Audit Failure Events Part B
+let DetailedEvents = SecurityEvent
+| where Computer has "CI-IS-VW-P001" 
+   or Computer has "CI-SQL-VM-T002" 
+   or Computer has "CI-IS-VW-T001" 
+   or Computer has "CI-SQL-VW-P002"
+| where EventID in (4672, // Special Privileges
+                   4673) // Sensitive Privilege Use
+| where not(SubjectUserName == "SYSTEM" 
+   or ProcessName endswith "lsass.exe" 
+   or ProcessName endswith "powershell.exe" 
+   or ProcessName endswith "svchost.exe")
+| project TimeGenerated, Computer, SubjectUserName, EventID, SubjectDomainName, SubjectUserSid, ProcessName, ObjectName, PrivilegeList;
+let UserEventCounts = DetailedEvents
+| summarize EventCount = count() by SubjectUserName;
+DetailedEvents
+| join kind=inner UserEventCounts on SubjectUserName
+| project SubjectUserName, Computer, SubjectDomainName, EventID, SubjectUserSid, ProcessName, ObjectName, PrivilegeList, EventCount
+| order by SubjectUserName desc;
+
+//Failed Security Verification
+let DetailedEvents = SecurityEvent
+| where Computer has "CI-IS-VW-P001" 
+   or Computer has "CI-SQL-VM-T002" 
+   or Computer has "CI-IS-VW-T001" 
+   or Computer has "CI-SQL-VW-P002"
+| where EventID in(103,1704,4014,15457)
+let DetailedEvents = SecurityEvent
+| where EventID in (103, //Special Privileges New Account
+1704 //Sensitive Privilege Use
+4014 //network packets dropped.
+15457)// server configuration changes.
+| project TimeGenerated, Computer, SubjectUserName, EventID, SubjectDomainName, SubjectUserSid, ProcessName, ObjectName, PrivilegeList;
+let UserEventCounts = DetailedEvents
+| summarize EventCount = count() by SubjectUserName;
+DetailedEvents
+| join kind=inner UserEventCounts on SubjectUserName
+| project SubjectUserName, Computer, SubjectDomainName, EventID, SubjectUserSid, ProcessName, ObjectName, PrivilegeList, EventCount
+| order by SubjectUserName desc
+| sort by TimeGenerated desc
+ 
+ 
+//Threat Identified by Authoritative Sources
+let DetailedEvents = SecurityEvent
+| where Computer has "CI-IS-VW-P001" 
+   or Computer has "CI-SQL-VM-T002" 
+   or Computer has "CI-IS-VW-T001" 
+   or Computer has "CI-SQL-VW-P002"
+| where EventID in(4776,4625,4676,5148,4674)
+| where EventID in (4776, //Computer fails to validate credentia
+4625, //Failed Login Attempt
+4676, //attempts made to perform privileges operations on a protected subsystem object
+5148,// DoS attempts
+4674)// Operation attempted on a privileged object, unknown event
+| project TimeGenerated, Computer, SubjectUserName, EventID, SubjectDomainName, SubjectUserSid, ProcessName, ObjectName, PrivilegeList;
+let UserEventCounts = DetailedEvents
+| summarize EventCount = count() by SubjectUserName;
+DetailedEvents
+| join kind=inner UserEventCounts on SubjectUserName
+| project SubjectUserName, Computer, SubjectDomainName, EventID, SubjectUserSid, ProcessName, ObjectName, PrivilegeList, EventCount
+| order by SubjectUserName desc
+ 
+//Audit 
+SecurityEvent
+| where Computer has "CI-IS-VW-P001" 
+   or Computer has "CI-SQL-VM-T002" 
+   or Computer has "CI-IS-VW-T001" 
+   or Computer has "CI-SQL-VW-P002"
+| where EventID == 24053 // Audit Failure
+   or EventID == 1102 // Audit log was cleared.
+   or EventID == 4625 // Failed Logon
+   or EventID == 4672 // Special Privileges
+   or EventID == 4673 // Sensitive Privilege Use
+   or EventID == 4626 // New Account logon
+   or EventID == 4738 // When User account is changed in AD
+   or EventID == 16990 // Security account manager blocks a non-administrator from creating an Active Directory account
+| where not(ProcessName endswith "lsass.exe")
+| where not(SubjectUserName endswith "SYSTEM")
+//| where not(SubjectDomainName endswith "DFASDS")
+//| project *
+
+| order by Computer desc
+
+//Audit Process Failure
+let DetailedEvents = SecurityEvent
+| where Computer has "CI-IS-VW-P001" 
+   or Computer has "CI-SQL-VM-T002" 
+   or Computer has "CI-IS-VW-T001" 
+   or Computer has "CI-SQL-VW-P002"
+| where EventID in(24003,15457,6006)
+| where EventID in (24003, //Server audit event repeated login failed
+15457, //server configuration changes
+6006) //Event log Service stopped
+| project TimeGenerated, Computer, SubjectUserName, EventID, SubjectDomainName, SubjectUserSid, ProcessName, ObjectName, PrivilegeList;
+let UserEventCounts = DetailedEvents
+| summarize EventCount = count() by SubjectUserName;
+DetailedEvents
+| join kind=inner UserEventCounts on SubjectUserName
+| project SubjectUserName, Computer, SubjectDomainName, EventID, SubjectUserSid, ProcessName, ObjectName, PrivilegeList, EventCount
+| order by SubjectUserName desc

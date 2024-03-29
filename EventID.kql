@@ -1,0 +1,43 @@
+SecurityEvent
+| where EventID in (4625, 5148, 4722, 4726, 4725, 4738, 4720, 701, 824, 833, 2004, 6006, 1704, 24003, 15457, 6006, 4776, 4676, 5148, 4674, 24003, 15457, 1102, 4672, 4673)
+| where not(ProcessName endswith "lsass.exe" 
+	or ProcessName endswith "powershell.exe" 
+	or ProcessName endswith "svchost.exe" 
+	or ProcessName endswith "chrome.exe" 
+	or ProcessName endswith "TaskHost.exe" 
+	or ProcessName endswith "explorer.exe" 
+	or ProcessName endswith "Teams.exe" 
+	or ProcessName endswith "msedge.exe" 
+	or ProcessName endswith "msedgewebview2.exe" 
+	or SubjectUserName == "SYSTEM")
+| extend EventType = case(
+    EventID in (4625, 5148), "Failed Login or DoS Attempt",
+    EventID in (4722, 4726, 4725, 4738, 4720), "Account Enabled, Removed, Disabled, Modified, or Created",
+    EventID in (701, 824, 833, 2004, 6006, 1704), "Low Resources",
+    EventID in (24003, 15457, 6006), "Audit Process Failure",
+    EventID in (4776, 4625, 4676, 5148, 4674), "Threat Identified",
+    EventID in (24003, 15457, 1102, 4672, 4673), "Audit Failure",
+    "Other"
+)
+| project TimeGenerated, Computer, EventType, EventID, SubjectUserName, TargetUserName, ProcessName, ObjectName, IpAddress, WorkstationName, LogonType, Details = case(
+    EventID == 4625, "Failed login attempt",
+    EventID == 5148, "DoS attempt detected",
+    EventID == 4722, "Account enabled",
+    EventID == 4726, "Account removed",
+    EventID == 4725, "Account disabled",
+    EventID == 4738, "Account modified",
+    EventID == 4720, "Account created",
+    EventID == 701, "SQL Server memory reclaimed",
+    EventID == 824, "SQL Server detected an I/O error",
+    EventID == 833, "SQL Server I/O delay",
+    EventID == 2004, "Windows resource exhaustion detected",
+    EventID == 6006, "Event log service stopped",
+    EventID == 1704, "Security settings applied",
+    EventID == 24003, "SQL server Login Failed",
+    EventID == 15457, "Server configuration changes",
+    EventID == 1102, "Audit log cleared",
+    EventID == 4672, "Special privileges assigned to new logon",
+    EventID == 4673, "A privileged service was called",
+    "Unknown Detail"
+), AdditionalInfo, MachineInventory, PrivilegeList
+| order by TimeGenerated desc
