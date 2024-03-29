@@ -1,7 +1,54 @@
 SecurityEvent
-| where EventID == 4624 
-| where TimeGenerated >= ago(24h) // Limiting to the last 24 hours for performance; adjust as needed
+| where EventID == "4624" 
+| where TimeGenerated >= ago(24h) // Limiting to the last 24 hours
 | summarize Computers = makeset(Computer), CountComputers = dcount(Computer) by TargetUserName, bin(TimeGenerated, 5m) // Group by user and time window; adjust bin size as needed
 | where CountComputers > 1 // Focus on instances where a user logged into more than 1 computer within the time window
 | project TargetUserName, TimeGenerated, Computers, CountComputers
 | order by CountComputers desc, TimeGenerated desc
+
+SecurityEvent
+| where TimeGenerated >= ago(24h) // Limiting to the last 24 hours
+| where EventID == "4624"
+| where SubjectDomainName == TargetDomainName
+| summarize
+    ['Distinct device logon count']=dcount(Computer),
+    ['List of devices']=make_set(Computer)
+    by tolower(Account), bin(TimeGenerated, 30m)//Find accounts that have logged on to 2 or more unique devices in less than 30 minutes
+| where ['Distinct device logon count'] >= 2
+
+SecurityEvent
+| where TimeGenerated >= ago(24h) // Limiting to the last 24 hours
+| where EventID == "4624"
+| where SubjectDomainName == TargetDomainName
+// Group by user and a 30-minute window to identify simultaneous logons
+| summarize 
+    ['Device logon count'] = dcount(Computer),
+    ['Device list'] = make_set(Computer),
+    ['First logon time'] = min(TimeGenerated), 
+    ['Last logon time'] = max(TimeGenerated)
+    by 
+    Account = tolower(Account), 
+    TimeWindow = bin(TimeGenerated, 30m)
+// Filter for accounts with logons to 2 or more unique devices within the same 30-minute window
+| where ['Distinct device logon count'] >= 2
+// Adding an extra step to ensure the logons are within a close timeframe (less than 30 minutes apart)
+| extend LogonTimeDifference = ['Last logon time'] - ['First logon time']
+| where LogonTimeDifference <= 30m
+| project Account, ['Device logon count'], ['Device list'], ['First logon time'], ['Last logon time'], LogonTimeDifference
+
+SecurityEvent
+| where TimeGenerated >= ago(24h) // Looking back over the last 24 hours
+| where EventID == 4624 // Successful logon events
+| extend AccountLower = tolower(Account) // Account names to lowercase for consistency
+| project TimeGenerated, AccountLower, Computer
+| join kind=inner (
+    SecurityEvent
+    | where TimeGenerated >= ago(24h)
+    | where EventID == 4624
+    | extend AccountLower = tolower(Account)
+    | project TimeGenerated, AccountLower, Computer
+) on AccountLower
+| where Computer != Computer1 // Ensure the two logons are on different computers
+| where abs(datetime_diff('second', TimeGenerated, TimeGenerated1)) <= 60 // 60 seconds
+| summarize by AccountLower, Computer, Computer1, TimeGenerated, TimeGenerated1
+
